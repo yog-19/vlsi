@@ -1,0 +1,143 @@
+
+module router_fifo(clock,resetn,write_enb,read_enb,soft_reset,data_in,lfd_state,data_out,empty,full);
+input clock,resetn,write_enb,read_enb,soft_reset,lfd_state;
+input [7:0]data_in;
+output empty,full;
+output reg [7:0]data_out;
+
+reg [8:0] mem[0:15];
+reg[6:0]fifo_counter;
+reg[4:0]rd_pt,wr_pt;
+reg lfd_temp;
+//reg [4:0] incrementer;
+
+integer i;
+
+//delay lfd state by one cycle
+always@(posedge clock)
+  begin
+    if (~resetn)
+      lfd_temp <= 0;
+    else
+      lfd_temp <= lfd_state;
+  end
+
+
+//Incrementer
+
+/*always @(posedge clock )
+begin
+   if( !resetn )
+       incrementer <= 0;
+
+   else if( (!full && write_enb) && ( !empty && read_enb ) )
+          incrementer<= incrementer;
+
+   else if( !full && write_enb )
+          incrementer <=    incrementer + 1;          //inc is increased because data is written
+
+   else if( !empty && read_enb )                  // inc is decrease because data is read
+          incrementer <=    incrementer - 1;
+   else
+         incrementer <=    incrementer;
+end
+
+//full and empty logic
+always @(incrementer)
+begin
+if(incrementer==0)      //nothing in fifo
+  empty = 1 ;
+  else
+  empty = 0;
+
+  if(incrementer==4'b1111)  // fifo is full
+   full = 1;
+   else
+   full = 0;
+end 
+*/
+
+//logic for increment pointer
+always@(posedge clock)
+begin
+if (~resetn)
+begin
+rd_pt <=0;
+wr_pt <=0;
+end
+else if(soft_reset)
+begin
+rd_pt <=0;
+wr_pt <=0;
+end
+else if(write_enb && ~full)
+begin
+wr_pt <= wr_pt+1;
+end
+else if(read_enb && ~empty)
+begin
+rd_pt <= rd_pt+1;
+end
+else
+begin
+wr_pt<= wr_pt;
+rd_pt <= rd_pt;
+end
+end
+
+//logic for fifo_counter
+always@(posedge clock)
+begin
+if(!resetn)
+fifo_counter <= 0;
+else if(soft_reset)
+fifo_counter <= 0;
+else if (read_enb && !empty)
+begin
+if(mem[rd_pt[3:0]][8]==1'b1)  //condition true for header byte
+fifo_counter<= mem[rd_pt[3:0]][7:2]+1; //payload length + header
+end
+else if (fifo_counter != 0)
+fifo_counter <= fifo_counter - 1;
+else 
+fifo_counter<=0;
+end
+
+//read logic
+always@(posedge clock)
+begin
+if(~resetn)
+data_out <= 9'b0;
+else if (soft_reset)
+data_out <= 9'bz;
+else 
+begin
+  if(read_enb && ~empty)
+    data_out <= mem[rd_pt[3:0]][7:0];
+  if(fifo_counter==0)
+    data_out <= 9'bz;
+end
+end
+
+// write logic
+always@(posedge clock)
+begin
+if(~resetn)
+for(i=0; i<16; i=i+1)
+begin
+mem[i]<=0;
+end
+else if(soft_reset)
+for(i=0; i<16; i=i+1)
+begin
+mem[i]<=0;
+end
+else if(write_enb && ~full)
+{mem[wr_pt[3:0]][8],mem[wr_pt[3:0]][7:0]}<={lfd_temp,data_in};
+end
+
+// empty full logic
+assign full=((wr_pt[4]!=rd_pt[4])&&(wr_pt[3:0]==rd_pt[3:0]));
+
+assign empty=(wr_pt==rd_pt);
+endmodule
